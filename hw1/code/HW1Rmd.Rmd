@@ -212,11 +212,6 @@ for (cols in paired_names) {
 
 ### 2.2.4 Visualizations of the most important variables  ----
 
-**Histogram**
-
-```{r}
-# (No histogram code provided in the original block.)
-```
 
 **Time series plot with non-linear trend**
 
