@@ -2,13 +2,17 @@
 
 ## PART 2: Exploratory Data Analysis ----------------
 
-# Load analysis libraries.
+# Imports
 library(tidyverse)
 library(stargazer)
 library(ggplot2)
 library(zoo)
 library(readxl)
 library(stringr)
+
+library(lmtest)
+library(sandwich)
+library(tseries)
 
 # Load the main dataset
 data_houses <- read_excel("hw1/data/Ecox2 HW1 data New.xlsx")
@@ -33,11 +37,11 @@ eurostat_employed <- read_excel("hw1/data/eurostat_employed.xlsx", col_names = F
 data_houses$year_quarter <- as.yearqtr(gsub(" - ", " ", data_houses$year_quarter))
 
 # Extract relevant columns from CNB data
-cnb_loans_interest <- cnb_loans_interest[2:41, c(1,2)] %>%
-  rename_with(~c("yr_qr", "house_loan_interest")) %>% 
+cnb_loans_interest <- cnb_loans_interest[2:41, c(1, 2)] %>%
+  rename_with(~ c("yr_qr", "house_loan_interest")) %>%
   arrange(yr_qr)
-cnb_loans_volume <- cnb_loans_volume[2:41, c(1,2)] %>%
-  rename_with(~c("yr_qr", "house_loan_volume")) %>% 
+cnb_loans_volume <- cnb_loans_volume[2:41, c(1, 2)] %>%
+  rename_with(~ c("yr_qr", "house_loan_volume")) %>%
   arrange(yr_qr)
 
 # Attach CNB series to houses
@@ -62,7 +66,7 @@ eurostat_import <- function(eurostat_df, col_name = "value") {
     dplyr::filter(
       yr_qr >= as.yearqtr("2015 Q1", format = "%Y Q%q"),
       yr_qr <= as.yearqtr("2024 Q4", format = "%Y Q%q")
-    ) %>% 
+    ) %>%
     arrange(yr_qr)
   
   # Rename value to target name
@@ -98,7 +102,7 @@ data_houses <- data_houses %>%
 keep <- c("data_houses", "true_names")
 rm(list = setdiff(ls(envir = .GlobalEnv), keep), envir = .GlobalEnv)
 
-## 2.2.3 Summary table of the data  ----
+# 2.2.3 Summary table of the data  ----
 summary_stats <- function(df_col) {
   stats <- c(
     min(df_col, na.rm = TRUE),
@@ -111,6 +115,8 @@ summary_stats <- function(df_col) {
   )
   return(stats)
 }
+
+print(data_houses[10], n=40)
 
 # Initialize summary table header.
 summary_df <- data.frame(
@@ -138,28 +144,14 @@ for (cols in paired_names) {
   }
 }
 
-## 2.2.4 Visualizations of the most important variables  ----
+# 2.2.4 Visualizations of the most important variables  ----
 
 # Histogram
-data_houses %>%
-  select(where(is.numeric)) %>%
-  pivot_longer(
-    cols = c(house_price_idx_2010, pop, house_loan_interest, const_overall, house_loan_volume, prod_price_idx_2021),
-    names_to = "variable",
-    values_to = "value"
-  ) %>%
-  ggplot(aes(x = value)) +
-  geom_histogram(color = "black", fill = "blue", bins = 15) +
-  facet_wrap(~variable, scales = "free_x") +
-  theme_bw() +
-  labs(
-    title = 'Histogram of the most important variables'
-  )
 
 # Time series plot with non-linear trend
 data_houses %>%
   pivot_longer(
-    cols = c(house_price_idx_2010, pop, house_loan_interest, const_overall, house_loan_volume, prod_price_idx_2021),
+    cols = c(house_price_idx_2010, cpi_yr_per, house_loan_interest, const_overall, house_loan_volume, prod_price_idx_2021),
     names_to = "variable",
     values_to = "value"
   ) %>%
@@ -171,7 +163,7 @@ data_houses %>%
   guides(color = guide_legend(title = NULL)) +
   theme_bw() +
   labs(
-    title = 'Time series of the most important variables'
+    title = "Time series of the most important variables"
   )
 
 
@@ -185,11 +177,11 @@ data_houses %>%
   ggplot(aes(x = year_quarter, y = value, group = variable)) +
   geom_vline(
     aes(
-      xintercept = as.yearqtr('2022 Q1'), 
+      xintercept = as.yearqtr("2022 Q1"),
       color = "Ukraine invasion"
-      ),
-      linewidth = 1.1
-    ) +
+    ),
+    linewidth = 1.1
+  ) +
   geom_line(aes(color = "Observed"), alpha = 0.9) +
   geom_smooth(aes(color = "Non-linear trend"), method = "loess", se = FALSE) +
   geom_point(aes(color = "Observed"), size = 0.8) +
@@ -197,13 +189,133 @@ data_houses %>%
   theme_classic() +
   scale_color_manual(
     values = c(
-      "Observed" = "black", 
-      "Non-linear trend" = "blue", 
+      "Observed" = "black",
+      "Non-linear trend" = "blue",
       "Ukraine invasion" = "red"
-      )
+    )
   ) +
   labs(
     title = "Stationarity and trending/seasonality analysis"
   )
 
+
+## Part 3 ----
+
+# 2.3.1 ----
+sm<-lm(data_houses$house_price_idx_2010~data_houses$nom_gdp)
+summary(sm)
+
+res_sm<-residuals(sm)
+bp_sm<-lm(res_sm^2~data_houses$nom_gdp)
+bptest(bp_sm)
+
+bgtest(sm)
+
+adf.test(data_houses$nom_gdp)
+quarter <- substr(data_houses$year_quarter, 7, 7)
+print(quarter)
+gdp_sm_fdf <- lm(formula = data_houses$nom_gdp ~ as.factor(quarter), data = data_houses)
+gdp_sm_fdf1 <- gdp_sm_fdf$residuals
+gdp_sm_fdf2 <- c(NA,diff(gdp_sm_fdf1))
+plot(gdp_sm_fdf2)
+
+adf.test(data_houses$house_price_idx_2010)
+
+# 2.3.2 ----
+gdp_detrend_ts <- ts(data_houses$nom_gdp, start = c(2015, 1), frequency = 4)  
+gdp_detrend1 <- diff(gdp_detrend_ts, lag = 4)
+print(gdp_detrend1)
+
+hpi_detrend_ts <- ts(data_houses$house_price_idx_2010, start = c(2015, 1), frequency = 4)  
+hpi_detrend <- diff(hpi_detrend_ts, lag = 4)
+print(hpi_detrend)
+
+# 2.3.3 ----
+sm_fdf<-lm(hpi_detrend_ts~gdp_detrend_ts)
+summary(sm_fdf)
+
+#correcting serial correlation
+acf(residuals(sm_fdf))
+dwtest(sm_fdf)
+
+robust_se <- sqrt(diag(NeweyWest(sm_fdf, lag = 5, prewhite = FALSE)))
+coeftest(sm_fdf, vcov = NeweyWest(sm_fdf, lag = 5, prewhite = FALSE))
+
+
+## Part 4 ----
+
+# 4.4.1 ----
+lnloanir<-log(data_houses$house_loan_interest)
+data_houses$con_dwell<-data_houses$const_overall-data_houses$constr_nondwell
+
+print(data_houses$con_dwell)
+exp_in_model<-lm(data_houses$house_price_idx_2010~data_houses$nom_gdp+data_houses$employed_1000+data_houses$con_dwell+lnloanir+data_houses$house_loan_volume+data_houses$prod_price_idx_2021)
+summary(exp_in_model)
+
+# 4.4.2 ----
+acf(residuals(exp_in_model))
+dwtest(exp_in_model)
+bptest(exp_in_model)
+
+#quarter correction
+
+adf.test(data_houses$employed_1000)
+
+emp_ts <- ts(data_houses$employed_1000, start = c(2015, 1), frequency = 4)  
+emp_dt2 <- diff(emp_ts, lag = 4)
+plot(emp_dt2)
+
+adf.test(data_houses$con_dwell)
+
+con_dwell_ts <- ts(data_houses$con_dwell, start = c(2015, 1), frequency = 4)  
+con_dwell_dt2 <- diff(con_dwell_ts, lag = 4)
+plot(con_dwell_dt2)
+
+adf.test(lnloanir)
+
+lnloanir_ts <- ts(lnloanir, start = c(2015, 1), frequency = 4)  
+lnloanir_dt2 <- diff(lnloanir_ts, lag = 4)
+
+plot(lnloanir_dt2)
+
+adf.test(data_houses$house_loan_volume)
+
+hlvl_ts <- ts(data_houses$house_loan_volume, start = c(2015, 1), frequency = 4)  
+hs_dt2 <- diff(hlvl_ts, lag = 4)
+plot(hs_dt2)
+
+
+det_exp_in_model<-lm(hpi_detrend~gdp_detrend1+emp_dt2+con_dwell_dt2+lnloanir_dt2+hs_dt2)
+summary(det_exp_in_model)
+
+
+#robust standard errors
+acf(residuals(det_exp_in_model))
+
+
+robust_se_1 <- sqrt(diag(NeweyWest(det_exp_in_model, lag = 2, prewhite = FALSE)))
+coeftest(det_exp_in_model, vcov = NeweyWest(det_exp_in_model, lag = 2, prewhite = FALSE))
+
+#third model
+
+data_houses$ren_dwell<-data_houses$renov_fam-data_houses$renov_apart
+
+rd_ts <- ts(data_houses$ren_dwell, start = c(2015, 1), frequency = 4)  
+rend_detrend <- diff(rd_ts, lag = 4)
+plot(rend_detrend)
+
+ppi_ts <- ts(data_houses$prod_price_idx_2021, start = c(2015, 1), frequency = 4)  
+ppi_detrend <- diff(ppi_ts, lag = 4)
+plot(ppi_detrend)
+
+micro_model<-lm(hpi_detrend~emp_dt2+con_dwell_dt2+lnloanir_dt2+rend_detrend+ppi_detrend)
+summary(micro_model)
+acf(residuals(micro_model))
+
+acf(residuals(micro_model))
+dwtest(micro_model)
+bptest(micro_model)
+
+robust_se_mm <- sqrt(diag(NeweyWest(micro_model, lag = 3, prewhite = FALSE)))
+coeftest(micro_model, vcov = NeweyWest(micro_model, lag = 3, prewhite = FALSE))
 
