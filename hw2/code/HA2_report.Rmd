@@ -1,0 +1,323 @@
+---
+title: "Home Assignment II"
+author: "Mykyta Huskov, Maskym Stetskov"
+date: "2025-11-06"
+header-includes:
+  - \setlength{\parskip}{0pt}
+  - \usepackage{float}
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  comment = ""
+)
+
+knitr::opts_chunk$set(
+ fig.width = 8,
+ fig.asp = 0.8,
+ out.width = "80%",
+ fig.align='center',
+ fig.pos = 'H'
+)
+
+```
+
+# Problem 1
+
+# Problem 2: Relationship between paid parental leave and gender pay gap
+
+## Problem 2.1: Theoretical background of the study
+
+&nbsp; &nbsp; &nbsp; &nbsp; The task is to estimate the relationship between paid parental leave and gender pay gap. Initial dataset contains 21 countries with variables measured in 2013, 2018, and 2023.  
+  To find unbiased ceteris paribus effect of paid parental leave on gender pay gap, we have to think about the expected effect and necessary controls:
+
+- *Paid Parental Leave (weeks)*: positive effect;  
+More paid parental leave weeks means the person is unemployed for a longer time period which results in more significant career break. This might make companies reluctant to hire the individual or higher for a lower wage. The effect should be diminishing as each additional week will not necessarily lead to linear skill eradication, the cases with 2 and 3 years of leave can be treated similarly and considered: "people who stopped working for a long time".
+
+- *Proportion of women in high-paying sectors*: negative effect;  
+One of the reasons for the difference in payouts between men and women is the fact that men tend to contribute to the more high-paying sectors in the economy. Therefore, if the women become more emancipated in sectors, such as IT, finace, and law, etc, the pay gap should shrink. The effect should be roughly linear: with 1 pp increase in female proportion of specialists in high-paying sectors, the paying paying gap should decrease by x pp. 
+
+- *Governmental childcare policy*: negative effect;  
+If there is childcare policy available in the government, there is more chance the person will remain employed by outsourcing caring for a child to the governmental agency. This will prevent career break and promote more smooth salary growth which should lead to lower gender pay gap. The effect should be also linear as the proportion of women otherwise not working just remains employed and are subject to career growth, no scaling  or diminishing effects there.
+
+- *Job-protected leave*: ambiguous effect;  
+On one hand, if the person has a job secured for the time of caring for a child, they do not face a career break, thus continue from the same point when returning to work. On the other hand, they might stuck on the same level of work, they had, since they lost some skills while not working, so they will have to rebound and then start career growth again. It will be difficult to change jobs and thus grow as the break from work will discourage companies to hire the individual right after the break. Effect should be diminishing similarly to paid leave.
+
+## Problem 2.2: Downloading the data
+
+&nbsp; &nbsp; &nbsp; &nbsp; We donwload the data from Eurostat Database and excel file that was given with the home assignment.
+
+Here is the preview of the data:
+
+``` {r data_import, include = FALSE}
+library(tidyverse)
+library(readxl)
+
+# Read Excel and rename first column
+parental_leave <- read_excel(here::here("hw2", "data", "parental_leave_data.xlsx"))
+parental_leave <- parental_leave %>%
+  rename(country = ...1)
+
+# Find columns for leave types
+protected_idx <- as.vector(parental_leave[1, ]) == "job-protected leave (weeks)"
+paid_idx <- as.vector(parental_leave[1, ]) == "paid leave (weeks)"
+
+# Keep country column in selection
+protected_idx[1] <- TRUE
+paid_idx[1] <- TRUE
+
+# Pivot protected leave from wide
+parental_leave_protected <- parental_leave[-1, protected_idx] %>%
+  pivot_longer(
+    cols = -country,
+    names_to = "year",
+    values_to = "jobprotected_leave"
+  ) %>%
+  mutate(
+    year = as.integer(str_sub(as.character(year), 1, 4)),
+    jobprotected_leave = as.numeric(jobprotected_leave)
+  )
+
+# Pivot paid leave from wide
+parental_leave_paid <- parental_leave[-1, paid_idx] %>%
+  pivot_longer(
+    cols = -country,
+    names_to = "year",
+    values_to = "paid_leave"
+  ) %>%
+  mutate(
+    year = as.integer(str_sub(as.character(year), 1, 4)),
+    paid_leave = as.numeric(paid_leave)
+  )
+
+# Merge datasets on country and year
+## |Main dataset is created ----
+parental_leave <- merge(
+  parental_leave_protected,
+  parental_leave_paid,
+  by = c("country", "year")
+)
+
+# Cleaning intermediary objects
+keep <- c("parental_leave")
+rm(list = setdiff(ls(envir = .GlobalEnv), keep), envir = .GlobalEnv)
+
+## |Importing OTHER datasets ----
+
+col_names <- c("country", "2013", "2018", "2023")
+country_names <- unique(parental_leave$country)
+
+data_prep <- function(df, rows_skip, cols_skip, var_name) {
+  df <- df[-rows_skip, -cols_skip] %>%                 
+    rename_with(~ col_names) %>%                       
+    filter(country %in% country_names) %>%             
+    pivot_longer(
+      cols = -country,                                 
+      names_to = "year",
+      values_to = var_name
+    ) %>%
+    mutate(
+      year = as.integer(stringr::str_sub(as.character(year), 1, 4)),
+      !!var_name := suppressWarnings(as.numeric(.data[[var_name]]))
+    )
+}
+
+# Gross domestic product (GDP) and main components per capita ----
+# [nama_10_pc__custom_18724757
+gdp_per_capita <- read_excel(
+  here::here("hw2", "data", "gdp_per_capita.xlsx"),
+  col_names = FALSE, sheet = 2, skip = 8
+)
+gdp_per_capita <- data_prep(
+  df = gdp_per_capita, 
+  rows_skip = c(1, 2, seq(42, 47, 1)), 
+  cols_skip = c(3, 5, 7), 
+  var_name = "gdp_per_capita"
+)
+
+## Gender employment gap ----
+# [sdg_05_30__custom_18726860]
+gender_empl_gap <- read_excel(
+  here::here("hw2", "data", "gen_empl_gap.xlsx"),
+  col_names = FALSE, sheet = 2, skip = 8
+)
+gender_empl_gap <- data_prep(
+  df = gender_empl_gap, 
+  rows_skip = c(1, 2, seq(38, 43, 1)), 
+  cols_skip = c(3, 5, 7), 
+  var_name = "gender_empl_gap"
+)
+
+# Gender pay gap in unadjusted form ----
+# [sdg_05_20__custom_18724287]
+gender_pay_gap <- read_excel(
+  here::here("hw2", "data", "gender_pay_gap.xlsx"),
+  col_names = FALSE, sheet = 2, skip = 8
+)
+gender_pay_gap <- data_prep(
+  df = gender_pay_gap, 
+  rows_skip = c(1, 2, seq(39, 46, 1)), 
+  cols_skip = c(3, 5, 7), 
+  var_name = "gender_pay_gap"
+)
+
+# Employed information and communications technology (ICT) specialists by sex ----
+# [isoc_sks_itsps__custom_18726980]
+ict_spec_sex <- read_excel(
+  here::here("hw2", "data", "ict_spec_sex.xlsx"),
+  col_names = FALSE, sheet = 2, skip = 7
+)
+ict_spec_sex <- data_prep(
+  df = ict_spec_sex, 
+  rows_skip = c(1, 2, seq(39, 46, 1)), 
+  cols_skip = c(3, 5, 7), 
+  var_name = "ict_spec_sex"
+)
+
+# Children in formal childcare or education ---- 
+# [ilc_caindformal__custom_18741434]
+child_forml_care <- read_excel(
+  here::here("hw2", "data", "child_formal_care.xlsx"),
+  col_names = FALSE, sheet = 2, skip = 9
+)
+child_forml_care <- data_prep(
+  df = child_forml_care, 
+  rows_skip = c(1, 2, seq(39, 43, 1)), 
+  cols_skip = c(3, 5, 7), 
+  var_name = "child_forml_care"
+)
+
+## | MERGING all variables into main dataset ----
+dfs_list <- list(
+  parental_leave, 
+  child_forml_care, 
+  gdp_per_capita, 
+  gender_pay_gap, 
+  ict_spec_sex,
+  gender_empl_gap
+)
+pay_gap <- reduce(dfs_list, merge, by = c("country", "year"), all = TRUE)
+
+# Cleaning intermediary objects
+keep <- c("pay_gap")
+rm(list = setdiff(ls(envir = .GlobalEnv), keep), envir = .GlobalEnv)
+```
+
+``` {r dataset_preview}
+dplyr::glimpse(pay_gap, width = 90)
+```
+## Problem 2.3: Downloading the data
+
+- **Job-protected leave (weeks)**:  
+  Number of weeks during which parents can interrupt work for childcare while their original job position is legally guaranteed.
+
+- **Paid leave (weeks)**:  
+  Number of weeks of parental leave that are financially compensated, capturing overall generosity of income support during leave.
+
+- **% of children up to 3 years who do not receive childcare**:  
+  Share of young children (0–3) not enrolled in formal childcare or early education, used as an inverse proxy for childcare availability and usage.
+
+- **GDP per capita EU PPS standard**:  
+  GDP per person expressed in Purchasing Power Standard, ensuring comparability in real income levels across countries; used as a control for economic development.
+
+- **Unadjusted gender pay gap**:  
+  Difference in average gross hourly earnings between men and women, expressed as a percentage of male earnings; reflects overall gender disparity in wages without controlling for characteristics.
+
+- **Employed ICT female specialists**:  
+  Share of ICT specialists who are women; indicates female representation in a high-paying, high-skill sector.
+
+- **Gender employment gap**:  
+  Difference in employment rates between men and women (men minus women), capturing gender differences in labour market participation.
+
+
+&nbsp; &nbsp; &nbsp; &nbsp; To discuss the units of the imported variables, let us look at their distributions. Based on skewness and dispersion, we shall be able to decide.
+
+``` {r histograms, fig.cap="Density of all variables"}
+library(ggplot2)
+hist_long <- pay_gap %>%
+  mutate(year = factor(year)) %>%                       
+  pivot_longer(                                         
+    cols = -c(country, year),
+    names_to = "variable", values_to = "value"
+  )
+
+# means for each variable and year
+means <- hist_long %>%
+  group_by(variable, year) %>%
+  summarise(average = mean(value, na.rm = TRUE), .groups = "drop")
+
+# Histograms ----
+ggplot(hist_long, aes(x = value, colour = year, fill = year)) +
+  geom_density(linewidth = 0.7, alpha = 0.1) +
+  geom_vline(data = means, aes(xintercept = average, colour = year),
+             linetype = "dashed", linewidth = 0.6, show.legend = FALSE) +
+  facet_wrap(~ variable, scales = "free") +
+  labs(x = NULL, y = "Density") +
+  theme_minimal()
+```
+
+&nbsp; &nbsp; &nbsp; &nbsp; After examining all distributions, we believe the one right-skewed with a big dispersion is `gdp_per_capita`, so we are going to log it.
+
+```{r log_gdp}
+# Making gdp_per_capita in log form
+pay_gap <- pay_gap %>% 
+  mutate(
+    log_gdp_per_capita = log(gdp_per_capita)
+  ) %>% 
+  select(-gdp_per_capita)
+```
+
+
+&nbsp; &nbsp; &nbsp; &nbsp; We will also examine the box and jitter plots of the variables to see whether there are any outliers in the data.
+
+At the same time, we will spot that the log transformation helped represent `gdp_per_capita` as it does not have a heavily-skewed distribution now.
+```{r box_data}
+box_long <- pay_gap %>%
+  mutate(year = factor(year)) %>%                       
+  pivot_longer(                                         
+    cols = -c(country, year),
+    names_to = "variable", values_to = "value"
+  )
+```
+
+```{r box_plot, fig.cap='Box and jitter plots of all variables, separated by years', fig.height=2, out.width='80%'}
+# Boxplots ----
+ggplot(box_long, aes(x = value, y = year)) + 
+  geom_boxplot() +
+  geom_jitter() +
+  facet_wrap(~ variable, scales = 'free')
+```
+
+## Problem 2.4: First model and summary table
+
+First light model that we propose to estimate will be the following:
+\begin{equation}
+\begin{split}
+gender\_pay\_gap_{2023, i} = beta_0 + beta_1 jobprotected\_leave_{2023, i} + paid\_leave_{2023, i} + U_t
+\nonumber
+\end{split}
+\end{equation}
+
+
+```{r first_model, results='asis'}
+library(stargazer)
+
+model1_2023 <- lm(
+  'gender_pay_gap ~ jobprotected_leave + paid_leave', 
+  data = pay_gap[pay_gap$year == 2023,]
+  )
+
+# Model results
+stargazer(
+  model1_2023, 
+  title = "First model results",
+  dep.var.labels = "Gender pay gap",
+  header = FALSE
+  )
+```
+
+We shall see the effect of `paid_leave` on `gender_pay_gap`, controlling for `jobprotected_leave`.
