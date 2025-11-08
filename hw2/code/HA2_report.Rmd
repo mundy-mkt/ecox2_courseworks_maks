@@ -5,6 +5,7 @@ date: "2025-11-06"
 header-includes:
   - \setlength{\parskip}{0pt}
   - \usepackage{float}
+  - \usepackage{dcolumn}
 output: pdf_document
 ---
 
@@ -271,10 +272,34 @@ pay_gap <- pay_gap %>%
   select(-gdp_per_capita)
 ```
 
+&nbsp; &nbsp; &nbsp; &nbsp; Next we will consider scatterplots with the response variable, `gender_pay_gap`.
+
+```{r data_scatter}
+# Preparing long df for visualizing scaterplotts with gender_pay_gap
+sc_long <- pay_gap %>%
+  mutate(year = factor(year)) %>%
+  pivot_longer(
+    cols = -c(country, year, gender_pay_gap),
+    names_to = "xvar", values_to = "x"
+  )
+
+```
+
+```{r scatteplots, fig.cap='Scatterplots of all variables with gender\\_pay\\_gap, separated by years'}
+# Scatterplots ----
+ggplot(sc_long, aes(x = x, y = gender_pay_gap, colour = year)) +
+  geom_point(alpha = 0.7, size = 1.9) +
+  geom_smooth(method = "lm", se = FALSE, linewidth = 0.7) +
+  facet_wrap(~ xvar, scales = "free_x") +
+  labs(x = NULL, y = "Gender pay gap", colour = "Year") +
+  theme_minimal()
+```
+\par
+
+&nbsp; &nbsp; &nbsp; &nbsp; Figure 2 suggests that there should be no structural breaks in the data, the slopes remain the same while the intercepts vary. This could be caused by the time trend in the variables that should be eliminated by FE, FD estimation.
 
 &nbsp; &nbsp; &nbsp; &nbsp; We will also examine the box and jitter plots of the variables to see whether there are any outliers in the data.
 
-At the same time, we will spot that the log transformation helped represent `gdp_per_capita` as it does not have a heavily-skewed distribution now.
 ```{r box_data}
 box_long <- pay_gap %>%
   mutate(year = factor(year)) %>%                       
@@ -291,16 +316,114 @@ ggplot(box_long, aes(x = value, y = year)) +
   geom_jitter() +
   facet_wrap(~ variable, scales = 'free')
 ```
+\par
 
-## Problem 2.4: First model and summary table
+&nbsp; &nbsp; &nbsp; &nbsp; Box and jitter plots do not suggest the presence of any outliers that are worth-deleting for the sample `n=20` over `T=3`. At the same time, we will spot that the log transformation helped standardize `gdp_per_capita` as it does not have a heavily-skewed distribution now.
+
+## Problem 2.4-2.5: First model and summary table
+
+&nbsp; &nbsp; &nbsp; &nbsp; To report summary statistics, we shall add first differences and time demeaned variables to the dataset. This will allow not only see the distributions of original variables, but also consider the variables that will be used in the panel methods.  
+This is necessary because we need to check how much of variability remains from the original variables to expect the size of the SEs when estimating the models.  
+
+&nbsp; &nbsp; &nbsp; &nbsp; We will also delete *United Kingdom* from the observations since it has a lot of NA values for the year `2023` and does not have any values for `gender_empl_gap`.
+```{r UK_na}
+# Removing United Kingdom
+knitr::kable(pay_gap %>% 
+               filter(country == 'United Kingdom') %>% 
+              select(where(~ any(is.na(.)))),
+             caption = 'Columns with at least one NA for United Kingdom'
+             )
+pay_gap <- pay_gap %>%
+  filter(country != 'United Kingdom')
+```
+
+```{r summary_stats_code}
+# Cleaning intermediary objects
+keep <- c("pay_gap")
+rm(list = setdiff(ls(envir = .GlobalEnv), keep), envir = .GlobalEnv)
+
+# Creating centered variables and differences (FE, FDE) ----
+centering <- function(x) {
+  x - mean(x, na.rm = TRUE)
+}
+pay_gap <- pay_gap %>% 
+  arrange(country, year) %>%
+  mutate(
+    across(where(is.numeric) & !any_of('year'),
+           ~ .x - mean(.x, na.rm = TRUE),
+           .names = "{.col}_cen"),
+    across(where(is.numeric) & !any_of('year') & !ends_with("_cen"),
+           ~ .x - dplyr::lag(.x),
+           .names = "{.col}_fd"),
+    .by = country
+  )
+
+## || 4 + 5: First model + Summary statistics ----------------
+
+# | Summary table of the data  ----
+
+# Creating a function to give all necessary summary stats
+summary_stats <- function(x) {
+  c(
+    Min = min(x, na.rm = TRUE),
+    QRT1 = quantile(x, 0.25, na.rm = TRUE),
+    Median = median(x, na.rm = TRUE),
+    Mean = mean(x, na.rm = TRUE),
+    QRT3 = quantile(x, 0.75, na.rm = TRUE),
+    Max = max(x, na.rm = TRUE),
+    NAs = sum(is.na(x)),
+    SD = sd(x, na.rm = TRUE)
+  )
+}
+# Initializing summary df
+summary_df <- data.frame(
+  Name = character(),
+  Min = numeric(),
+  QRT1 = numeric(),
+  Median = numeric(),
+  Mean = numeric(),
+  QRT3 = numeric(),
+  Max = numeric(),
+  NAs = integer(),
+  SD = numeric()
+)
+
+# Filling summary df row-wise
+for (name in colnames(pay_gap)[-c(1, 2)]) {
+  x <- pay_gap[[name]]
+  
+  stats <- summary_stats(x)
+  row   <- data.frame(
+    Name = name,
+    t(stats)
+  )
+  summary_df <- rbind(summary_df, row)
+}
+```
+
+```{r summary_df, results='asis'}
+library(stargazer)
+stargazer(
+  summary_df, 
+  summary = FALSE, 
+  title = 'Summary statistcs (original, FD, time-demeaned)',
+  rownames = FALSE,
+  table.placement = "H", 
+  header = FALSE
+  )
+```
+\par
 
 First light model that we propose to estimate will be the following:
 \begin{equation}
 \begin{split}
-gender\_pay\_gap_{2023, i} = beta_0 + beta_1 jobprotected\_leave_{2023, i} + paid\_leave_{2023, i} + U_t
+gender\_pay\_gap_{2023, i} = \beta_0 + \beta_1 \cdot jobprotected\_leave_{2023, i} + \beta_2 \cdot paid\_leave_{2023, i} + u_t
 \nonumber
 \end{split}
 \end{equation}
+\par
+
+We shall see the effect of `paid_leave` on `gender_pay_gap`, controlling for `jobprotected_leave` on the cross-section of the 20 countries in the dataset.
 
 
 ```{r first_model, results='asis'}
@@ -314,10 +437,285 @@ model1_2023 <- lm(
 # Model results
 stargazer(
   model1_2023, 
-  title = "First model results",
+  title = "First model results (cross-section, 2023)",
   dep.var.labels = "Gender pay gap",
-  header = FALSE
+  header = FALSE,
+  table.placement = "H",
+  style = 'all'
   )
 ```
+\par
 
-We shall see the effect of `paid_leave` on `gender_pay_gap`, controlling for `jobprotected_leave`.
+&nbsp; &nbsp; &nbsp; &nbsp; Both of the explanatory variables appear to be statistically insignificant. That might be because of the small sample size `n=20` and thus high SEs.
+
+## Problem 2.6: First model and estimated for all years
+
+&nbsp; &nbsp; &nbsp; &nbsp; Given that we have can exploit the time dimension of our data, we will estimate the same model accounting for the possible time trend in our variables. For the latter purpose, we will add year dummies to our equation.
+
+&nbsp; &nbsp; &nbsp; &nbsp; In general, panel data should allow us to work with constant effects that influence each observation differently, explain the response variable and which are difficult to estimate. In the cross-sectional case, it is almost impossible to work with unchanging effects if you cannot proxy, thus they might create unsolvable OVB. 
+
+&nbsp; &nbsp; &nbsp; &nbsp; Since the scatterplots did not show any hint of changing slopes for the `jobprotected_leave` and `paid_leave`, we will not include their interactions with the dummies in the model.
+\begin{equation}
+\begin{split}
+gender\_pay\_gap_{t, i} = \beta_0 + \beta_1 \cdot jobprotected\_leave_{t, i} + beta_2 \cdot paid\_leave_{t, i} + \beta_3t_{2018} + \beta_4t_{2023} + u_t
+\nonumber
+\end{split}
+\end{equation}
+\par
+
+
+
+&nbsp; &nbsp; &nbsp; &nbsp; To compare, we report both models, with and without year dummies. From the results (with dummies) in Table 4, we observe that both `jobprotected_leave` and `paid_leave` have a positive significant effect on `gender_pay_gap`. The former, with the one week increase, yields $0.037$ pp widening in gender pay gap while the latter only $0.041$ pp.     
+&nbsp; &nbsp; &nbsp; &nbsp; The year dummies represent that gender pay gap shrinks every five years from $2013$ to $2023$ by roughly $1.5$ pp. One of the dummies is insignificant which suggest first 5-year impact is possibly due to data noise. We recognize that the trend can be explained with other factors that will be added to the model.    
+&nbsp; &nbsp; &nbsp; &nbsp; Given that the "leave" variables have relatively big standard deviation\footnote{Table 2} (roughly 50 weeks), then they have influence slightly higher than the 5-year trend.  
+&nbsp; &nbsp; &nbsp; &nbsp; Overall, dummies allow us to account for time trend; however, do not change the coefficient of the models much as expected from the scatterplots (Figure 2), just unbias the intercept.
+
+```{r first_model_allyears, results='asis'}
+model1_all_year <- lm(
+  gender_pay_gap ~ jobprotected_leave + paid_leave + factor(year), 
+  data = pay_gap
+)
+model1_all <- lm(
+  gender_pay_gap ~ jobprotected_leave + paid_leave, 
+  data = pay_gap
+)
+
+# Model results
+stargazer(
+  model1_all, 
+  model1_all_year,
+  title = "First model results, all years (with and without year dummies)",
+  align = TRUE,
+  dep.var.labels = "Gender pay gap",
+  column.labels = c("No year dummies", "With year dummies"),
+  column.separate = c(1, 1),
+  model.numbers = FALSE,
+  header = FALSE,
+  table.placement = "H",
+  style = "all",
+  report = "vcsp*",
+  omit.stat = c("LL","ser","f"),
+  column.sep.width = "8pt",
+  no.space = FALSE
+)
+```
+\par
+
+## Problem 2.7: Main model - Fixed Effects (Gender Pay Gap ~ Paid Leave)
+
+&nbsp; &nbsp; &nbsp; &nbsp; We propose the FE as the main model for finding the effect of Paid Leave on Gender Pay Gap in the following specification:
+
+\begin{equation}
+\begin{split}
+gender\_pay\_gap_{t, i} = \beta_0 + \beta_1 \cdot paid\_leave_{t, i} + \sum_j \beta_j x_{j,t,i} + \sum_t \beta_t year_t + u_t
+\nonumber
+\end{split}
+\end{equation}
+\par
+
+&nbsp; &nbsp; &nbsp; &nbsp; We believe the best model from all ablations is FE with all controls in place, accounting for the time trend.
+
+- *Fixed effects*:  
+We select fixed effects as the model since we believe that there will be unchanged variable $a_i$ that will influence reponse variables in all time periods, leading to serial correlation and violation of the exogeneity assumption.  
+The example could be social institutions: treatment of women with relation to the labour market, in particular whether the labour of women and men costs the same, who has to stay with the kids as they are born, and should women go study STEM or do more people-oriented work, etc. Even though we have a cross-section of quite progressive European countries, there will still be disparity between more egalitarian Nordic countries, Western Europe and more conservative Central and Eastern European.
+
+- *Fixed effects*: 
+It is important to account for time trend as this may lead to spurious correlation problem. We can see it well on the example of `log_gdp_per_capita`. In the Table 5, the first model with individual effects, shows the impact of `log_gdp_per_capita` on the `gender_pay_gap`. On the other hand, we can see very well increasing trend of GDP and decreasing of Pay Gap which can lead to spurious correlation.
+
+In the end, we decide to select the model with the most controls, to unbias the effect of
+
+```{r FE, results='asis'}
+library(plm)
+library(sandwich)
+
+FE_ind <- plm(
+  gender_pay_gap ~ child_forml_care + log_gdp_per_capita + paid_leave + jobprotected_leave + gender_empl_gap + ict_spec_sex,
+  model = 'within',
+  effect = 'individual',
+  index = c('country', 'year'),
+  data = pay_gap
+)
+
+FE <- plm(
+  gender_pay_gap ~ paid_leave + ict_spec_sex + log_gdp_per_capita,
+  model = 'within',
+  effect = 'twoways',
+  index = c('country', 'year'),
+  data = pay_gap
+)
+
+FE_all_vars <- plm(
+  gender_pay_gap ~ child_forml_care + log_gdp_per_capita + paid_leave + jobprotected_leave + gender_empl_gap + ict_spec_sex,
+  model = 'within',
+  effect = 'twoways',
+  index = c('country', 'year'),
+  data = pay_gap
+)
+
+FE_initial <- plm(
+  gender_pay_gap ~ paid_leave + jobprotected_leave,
+  model = 'within',
+  index = c('country', 'year'),
+  effect = 'twoways',
+  data = pay_gap
+)
+
+cov_FE <- vcovHC(FE_all_vars, type = "HC1", cluster = "group")
+robust_se <- sqrt(diag(cov_FE))
+
+# Model results
+stargazer(
+  FE_ind,
+  FE_initial, 
+  FE,
+  FE_all_vars,
+  title = "Fixed effects model ablations",
+  align = TRUE,
+  dep.var.labels = "Gender pay gap",
+  column.labels = c("FE baseline (2.6 task), ind effects", "FE baseline", "FE ict, gdp", "FE all vars", "FE all vars, HAC SEs"),
+  column.separate = c(1, 1),
+  model.numbers = FALSE,
+  header = FALSE,
+  table.placement = "H",
+  style = "all",
+  report = "vcsp*",
+  omit.stat = c("LL","ser", "f"),
+  column.sep.width = "8pt",
+  no.space = FALSE
+)
+```
+
+## Problem 2.8: Assumptions disussion
+
+Before the discussion of the assumptions, we will perform a short visual check to motivate our arguments for validity of our model.
+
+```{r vis_check_ass, fig.cap='Visual check on the "FE all vars" model robustness'}
+performance::check_model(FE_all_vars)
+```
+
+We observe that the model does not have collinearity problems, residuals also have a centered distribution around zero value, with no strong skew. At the same time, there are linearity issues, there are more extremely negative or positive residuals which might hint at functional misspecification or overall poor fit of the model.
+
+ - **Model specification:** 
+ 
+Since we have panel data and we argue for the existence of the unchanged effects specific to observations, we should consider FE and FDE. However, we also believe that sample `n=20` size is rather small and decreasing it further with the FDE is a bad idea, so we will stick to the FE. For presence of $a_i$ will be conducted later via the Hausman test to compare the results of FE and RE as RE is more efficient in the absence of $E(a_i|X_i) \neq 0$.
+ 
+ - **Random sample:** 
+ 
+ We believe the sample is random, in fact, we cover almost whole population as we have 20 countries in the dataset. More advanced as well as developing economies are included, thus there should be no selection bias due to factors in distrurbance that typically bias the estimators.
+ 
+ - **Variability of explanatory variables:** 
+ 
+ Referring to Table 2, we observe proper variability in all variables.
+ 
+ - **Exogeneity:**   
+ 
+ Referring to the argument made in section $2.7$, we believe that $a_i$ is part of the disturbance since, for example, social attidute to women on the labour market can relate to `gender_pay_gap` and possibly to the level of economic development (`log_gdp_per_capita`) as well as `gender_empl_gap`, `ict_spec_sex`, etc.
+ 
+ 
+ - **Homoscedasticity:** 
+We shall conduct Breush-Pagan test to know whether the variance of errors is homoscedastic.
+```{r bptest, include=FALSE}
+library(lmtest)
+bptest(FE_all_vars)
+```
+$p-value: \ 0.4872 \implies$ errors are homoscedastic.
+
+
+ - **Serial correlation:**
+We will conduct Wooldridge test for serial correlation\footnote{not Durbin-Watson test, as it does not work for panel linear regressions}.
+```{r pwartest, include=FALSE}
+pwartest(FE_all_vars)
+```
+$p-value = 0.00567 \implies$ serial correlation.
+
+This will require us to report Heteroscedasticity and Autocorrelation robust standard errors.
+ 
+Overall, we believe the model has a poor fit of the data, with the negative $R^2$ after we account for the time trends of the variables. The effect of `paid_leave` remains relatively stable, regardless of the changes in the model which means that the other explanatory variables have low correlation with `paid_leave` and they are also poor control for the `paid_leave` as all of them appear insignificant.
+
+## Problem 2.9: RE vs FE
+
+In the following section we are going to test for the existence of $a_i$. For that matter we are going to run RE specification and conduct a Hausman test.
+
+$p-value = 0.04555 \implies$ one of the models is inconsistent due to the $a_i$ which is RE because FE controls for it.
+
+Otherwise, we have 2 specifications: the one that we received from a previous section with all available variables and the one where we drop `child_form_care` and `gender_empl_gap`.
+
+We will argue that the model with less variables is better. `child_form_care` and `gender_empl_gap` remain insignificant even after the treatment with heteroscedasticity and autocorrelated standard errors which we specify with small-sample correction and assuming independence between the observations. 
+
+```{r FE_RE, results='asis'}
+
+FE_main <- plm(
+  gender_pay_gap ~ log_gdp_per_capita + paid_leave + jobprotected_leave + ict_spec_sex,
+  model = 'within',
+  effect = 'twoways',
+  index = c('country', 'year'),
+  data = pay_gap
+)
+
+RE_main <- plm(
+  gender_pay_gap ~ log_gdp_per_capita + paid_leave + jobprotected_leave + ict_spec_sex,
+  model = 'random',
+  effect = 'individual',
+  index = c('country', 'year'),
+  data = pay_gap
+)
+
+cov_FE_all_vars <- vcovHC(FE_all_vars, type = "HC1", cluster = "group")
+robust_se_all_vars <- sqrt(diag(cov_FE_all_vars))
+
+cov_FE_main <- vcovHC(FE_main, type = "HC1", cluster = "group")
+robust_se_main <- sqrt(diag(cov_FE_main))
+
+cov_RE_main <- vcovHC(RE_main, type = "HC1", cluster = "group")
+robust_se_re <- sqrt(diag(cov_RE_main))
+
+# Model results
+stargazer(
+  FE_main,
+  FE_all_vars,
+  RE_main,
+  title = "FE and RE model ablations, HAC SEs",
+  align = TRUE,
+  dep.var.labels = "Gender pay gap",
+  column.labels = c("FE main","FE all vars"),
+  column.separate = c(1, 1),
+  model.numbers = FALSE,
+  header = FALSE,
+  table.placement = "H",
+  style = "all",
+  report = "vcsp*",
+  omit.stat = c("LL","ser", "f"),
+  column.sep.width = "8pt",
+  no.space = FALSE,
+  se = list(robust_se_main, robust_se_all_vars, robust_se_re)
+)
+```
+
+```{r haus, include=FALSE}
+# Hausman test for serial correlation due to a_i
+phtest(FE_main, RE_main)
+```
+
+Overall, from 2 specifications of FE and RE, we believe that the one with less variables, `FE_main` is better since it has significant controls and unbiases the effect of the `paid_leave` properly while the other FE specification with all variables simply increases multicollinearity, thus reducing statistical significance of the relevant variables, without having meaningful effect on the response.
+
+## Problem 2.10
+
+ - **Estimates:**
+ 
+ Lastly we believe given our data, specification `gender_pay_gap ~ log_gdp_per_capita + paid_leave + jobprotected_leave + ict_spec_sex` is the best. It is FE estimator with within group heteroscedasticity and autocorrelation robust SEs. 
+ 
+It finds that increase in one week of Paid Parental Leave leads to $0.04$ pp increase in the Gender Pay Gap. It aligns with our intuition since the payment, that is typically received by women, incentivizes them to stay out of work more and have a larger career break which leads to the period of recovery and lower salary growth.
+
+Job Protected Leave finally has a negative effect. Our reasoning was ambiguous as to whether the effect should be posisitive or negative. It is likely because staying with the job you have smoothes the career recovery phase after getting back to work. 
+ 
+Proprotion of female specialists in high-paying jobs increases the Gender Pay Gap which is an unexpected result. Since the gap has the following formula $\frac {w_{men} - w_{women}}{w_{men}} \cdot 100$, `ict_spec_sex` might have a correlation with the ommitted variable, which biases upwards its coefficient significantly. Also, even though women are in higher-paying sector, they may have junior / support / part-time roles while men in senior / bonus-heavy / overtime roles which may lead to increase in the gap.
+
+Lastly, `log_gdp_per_capita` has a positive effect. The reason could be due to richer societies typically being more unequal. And since the income distribution is highly right-skewed, the men can dominate it and increase the gap.
+
+ - **What we would do differently?**
+ 
+  - *Data*: we would import more data, have more variables, and have it more granular (sectoral data, all EU countries, richer time dimension). This could lead to more consistent estimates, thus better validity of all tests and statistics.
+  
+  - *Models*: we would estimate FD with richer data to see whether is is more significant or has a higher $R^2$.
+  
+  - *Specifications*: we would consider different functional specifications and interaction effects theoretiacally to build a better, more unbiased model.

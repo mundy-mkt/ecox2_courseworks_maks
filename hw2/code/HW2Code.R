@@ -290,19 +290,6 @@ for (name in colnames(pay_gap)[-c(1, 2)]) {
   summary_df <- rbind(summary_df, row)
 }
 
-# Creating year dummies
-year <- pay_gap %>% arrange(country, year) %>% select(year)
-pay_gap <- pay_gap %>% 
-  arrange(country, year) %>% 
-  mutate(
-    ones = 1L
-  ) %>% 
-  pivot_wider(
-    names_from = year,
-    values_from = ones,
-    values_fill = 0
-  ) %>% 
-  mutate(year = year$year)
 
 # | 1st model using 2023 data ----
 model1_2023 <- lm(
@@ -346,33 +333,67 @@ coeftest(model1_all, vcov. = vcovCL(model1_all, cluster = ~ country))
 ## || 7. gender_pay_gap ~ paid_leave + controls (FE) ----------------
 
 # Fixed effects
-FE <- plm(
-  gender_pay_gap ~ child_forml_care + log_gdp_per_capita + paid_leave,
+FE_ind <- plm(
+  gender_pay_gap ~ child_forml_care + log_gdp_per_capita + paid_leave + jobprotected_leave + gender_empl_gap + ict_spec_sex,
   model = 'within',
+  effect = 'individual',
   index = c('country', 'year'),
   data = pay_gap
 )
-summary(FE)
 
-check_model(FE)
-bptest(FE)
-dwtest(FE)
-acf(residuals(FE))
-coeftest(FE, vcov. = vcovCL(FE, cluster = ~ country))
+FE <- plm(
+  gender_pay_gap ~ paid_leave + ict_spec_sex + log_gdp_per_capita + I(paid_leave)^2,
+  model = 'within',
+  effect = 'twoways',
+  index = c('country', 'year'),
+  data = pay_gap
+)
+
+FE_all_vars <- plm(
+  gender_pay_gap ~ child_forml_care + log_gdp_per_capita + paid_leave + jobprotected_leave + gender_empl_gap + ict_spec_sex,
+  model = 'within',
+  effect = 'twoways',
+  index = c('country', 'year'),
+  data = pay_gap
+)
+
+FE_initial <- plm(
+  gender_pay_gap ~ paid_leave + jobprotected_leave,
+  model = 'within',
+  index = c('country', 'year'),
+  effect = 'twoways',
+  data = pay_gap
+)
+summary(FE_all_vars)
+
+
+performance::check_model(FE_all_vars)
+bptest(FE_all_vars)
+pwartest(FE_all_vars)
+acf(residuals(FE_all_vars))
+coeftest(FE_all_vars, vcov. = vcovHC(FE_all_vars, type = "HC1", cluster = "group"))
 
 
 ## || 8. Assumptions disscussion ----------------
 
 ## || 9. FE, FDE, RE, Pooled OLS ----------------
 
-# Random Effects
-RE <- plm(
-  gender_pay_gap ~ child_forml_care + log_gdp_per_capita + paid_leave,
-  model = 'random',
+FE_main <- plm(
+  gender_pay_gap ~ log_gdp_per_capita + paid_leave + jobprotected_leave + ict_spec_sex,
+  model = 'within',
+  effect = 'twoways',
   index = c('country', 'year'),
   data = pay_gap
 )
-summary(RE)
+
+# Random Effects
+RE_main <- plm(
+  gender_pay_gap ~ log_gdp_per_capita + paid_leave + jobprotected_leave + ict_spec_sex,
+  model = 'random',
+  effect = 'individual',
+  index = c('country', 'year'),
+  data = pay_gap
+)
 
 check_model(RE)
 bptest(RE)
@@ -382,7 +403,7 @@ coeftest(RE, vcov. = vcovCL(RE, cluster = ~ country))
 
 
 # Hausman test for serial correlation due to a_i
-phtest(FE, RE)
+phtest(FE_main, RE_main)
 
 # First Difference Estimator
 FD <- plm(
