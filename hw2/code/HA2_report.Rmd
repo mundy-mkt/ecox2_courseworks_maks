@@ -27,6 +27,8 @@ knitr::opts_chunk$set(
 
 ```
 
+**Disclaimer:** The homework project is available on GitHub. To make sure everything works correctly (file paths, folder structure, and dependencies), it is recommended to clone the repository from GitHub instead of downloading individual files. This ensures the project runs as intended.
+
 # Problem 1
 
 See attached PDF file for the hand-written solution, as requested.
