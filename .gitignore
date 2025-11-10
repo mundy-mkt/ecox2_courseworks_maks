@@ -1,4 +1,15 @@
-.Rproj.user
-.Rhistory
-.RData
-.Ruserdata
+# R project user settings and caches
+.Rproj.user/        # RStudio metadata (window layout, session-specific files) - should not be versioned
+.Rhistory           # Command history - personal, can contain sensitive commands
+.RData              # Workspace image (saved objects) - can be large and is user-specific
+.Ruserdata          # Additional per-user RStudio data
+
+# R package/library caches and project-local libraries
+library/            # local package library (if you create one) - binary packages, large and machine-specific
+local/              # sometimes used for local builds or caches
+cellar/             # (optional) custom package cache folder used by some setups
+
+# Lock, staging and temporary directories (generic)
+lock/               # lock files or folders used by build tools
+staging/            # temporary staging area for packaging/building
+sandbox/            # sandbox environment / temp files used during testing
