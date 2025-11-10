@@ -1,11 +1,11 @@
 # R project user settings and caches
-.Rproj.user/        # RStudio metadata (window layout, session-specific files) - should not be versioned
-.Rhistory           # Command history - personal, can contain sensitive commands
-.RData              # Workspace image (saved objects) - can be large and is user-specific
-.Ruserdata          # Additional per-user RStudio data
+.Rhistory
+.RData
+.Ruserdata
+.Rproj.user/
 
 # R package/library caches and project-local libraries
-library/            # local package library (if you create one) - binary packages, large and machine-specific
+*library/            # local package library (if you create one) - binary packages, large and machine-specific
 local/              # sometimes used for local builds or caches
 cellar/             # (optional) custom package cache folder used by some setups
 
