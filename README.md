@@ -9,6 +9,7 @@ git clone https://github.com/mundy-mkt/ecox2_courseworks_maks
 
 ## Repo structure
 
+```md
 📦 repository_root
 │
 ├── 📁 hw1/ # Homework 1 (less relevant here)
@@ -39,7 +40,7 @@ git clone https://github.com/mundy-mkt/ecox2_courseworks_maks
 ├── 📄 .Rprofile # Ensures automatic renv project activation
 ├── 📄 .gitignore
 └── 📄 README.md # General explanation of the project and structure
-
+```
 ## Project Setup (R + renv)
 
 This repository uses [**renv**](https://rstudio.github.io/renv/) for reproducible R package management. The lockfile is `renv.lock` (not `renv.log`). Restoring from it will install the exact package set into a project-local library, optionally reusing a global cache for speed.
