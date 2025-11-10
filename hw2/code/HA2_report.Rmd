@@ -27,7 +27,7 @@ knitr::opts_chunk$set(
 
 ```
 
-**Disclaimer:** The homework project is available on GitHub. To make sure everything works correctly (file paths, folder structure, and dependencies), it is recommended to clone the repository from GitHub instead of downloading individual files. This ensures the project runs as intended.
+**Disclaimer:** The homework project is available on GitHub. To make sure everything works correctly (file paths, folder structure, and dependencies), it is recommended to clone the [repository](https://github.com/mundy-mkt/ecox2_courseworks_maks) from GitHub instead of downloading individual files. This ensures the project runs as intended.
 
 # Problem 1
 
@@ -225,7 +225,7 @@ dplyr::glimpse(pay_gap, width = 90)
   Number of weeks of parental leave that are financially compensated, capturing overall generosity of income support during leave.
 
 - **% of children up to 3 years who do not receive childcare**:  
-  Share of young children (0–3) not enrolled in formal childcare or early education, used as an inverse proxy for childcare availability and usage.
+  Share of young children (0-3) not enrolled in formal childcare or early education, used as an inverse proxy for childcare availability and usage.
 
 - **GDP per capita EU PPS standard**:  
   GDP per person expressed in Purchasing Power Standard, ensuring comparability in real income levels across countries; used as a control for economic development.
@@ -260,7 +260,7 @@ means <- hist_long %>%
 ggplot(hist_long, aes(x = value, colour = year, fill = year)) +
   geom_density(linewidth = 0.7, alpha = 0.1) +
   geom_vline(data = means, aes(xintercept = average, colour = year),
-             linetype = "dashed", linewidth = 0.6, show.legend = FALSE) +
+            linetype = "dashed", linewidth = 0.6, show.legend = FALSE) +
   facet_wrap(~ variable, scales = "free") +
   labs(x = NULL, y = "Density") +
   theme_minimal()
@@ -334,10 +334,10 @@ ggplot(box_long, aes(x = value, y = year)) +
 ```{r UK_na}
 # Removing United Kingdom
 knitr::kable(pay_gap %>% 
-               filter(country == 'United Kingdom') %>% 
+              filter(country == 'United Kingdom') %>% 
               select(where(~ any(is.na(.)))),
-             caption = 'Columns with at least one NA for United Kingdom'
-             )
+              caption = 'Columns with at least one NA for United Kingdom'
+            )
 pay_gap <- pay_gap %>%
   filter(country != 'United Kingdom')
 ```
@@ -355,11 +355,11 @@ pay_gap <- pay_gap %>%
   arrange(country, year) %>%
   mutate(
     across(where(is.numeric) & !any_of('year'),
-           ~ .x - mean(.x, na.rm = TRUE),
-           .names = "{.col}_cen"),
+          ~ .x - mean(.x, na.rm = TRUE),
+          .names = "{.col}_cen"),
     across(where(is.numeric) & !any_of('year') & !ends_with("_cen"),
-           ~ .x - dplyr::lag(.x),
-           .names = "{.col}_fd"),
+          ~ .x - dplyr::lag(.x),
+          .names = "{.col}_fd"),
     .by = country
   )
 
